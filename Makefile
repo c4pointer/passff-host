@@ -13,7 +13,7 @@ INSTALL_UNIX_FILE := install_host_app.sh
 INSTALL_UNIX_SRC := $(SRC_DIR)/$(INSTALL_UNIX_FILE)
 INSTALL_UNIX_TARGET := $(TARGET_DIR)/$(INSTALL_UNIX_FILE)
 
-HOST_APP_FILES := passff.py passff.json
+HOST_APP_FILES := passff.py passff.json passff-host-daemon.py passff-snap-forward.py
 HOST_APP_SRC := $(addprefix $(SRC_DIR)/,$(HOST_APP_FILES))
 HOST_APP_TARGET := $(addprefix $(TARGET_DIR)/,$(HOST_APP_FILES))
 
