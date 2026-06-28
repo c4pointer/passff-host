@@ -72,9 +72,10 @@ def setPassGpgOpts(env, opts_dict):
     env['PASSWORD_STORE_GPG_OPTS'] = opts.strip()
 
 
-if __name__ == "__main__":
-    # Read message from standard input
-    receivedMessage = getMessage()
+def process_message(receivedMessage):
+    """ Turn a decoded request into a pass invocation and return the response
+        dict. Shared by the stdio entry point (__main__) and the Snap socket
+        bridge daemon, so the pass/gpg handling lives in exactly one place. """
     opt_args = []
     pos_args = []
     std_input = None
@@ -127,11 +128,14 @@ if __name__ == "__main__":
     # Run and communicate with pass script
     proc = subprocess.run(cmd, **proc_params)
 
-    # Send response
-    sendMessage(
-        encodeMessage({
-            "exitCode": proc.returncode,
-            "stdout": proc.stdout.decode(CHARSET),
-            "stderr": proc.stderr.decode(CHARSET),
-            "version": VERSION
-        }))
+    return {
+        "exitCode": proc.returncode,
+        "stdout": proc.stdout.decode(CHARSET),
+        "stderr": proc.stderr.decode(CHARSET),
+        "version": VERSION
+    }
+
+
+if __name__ == "__main__":
+    # Read message from standard input, process it, send the response back.
+    sendMessage(encodeMessage(process_message(getMessage())))
