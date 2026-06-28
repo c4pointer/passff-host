@@ -39,6 +39,33 @@ For **OpenBSD** users (cf. [issue #67](https://codeberg.org/PassFF/passff-host/i
 ```
 Please keep in mind that this does still lessen the security provided by the default OpenBSD settings. Make the change at your own risk!
 
+#### Sandboxed Firefox (Snap / Flatpak)
+
+Firefox installed via **Snap** (the default on recent Ubuntu) or **Flatpak** runs confined, so it looks for the Native Messaging manifest in its own private directory instead of `~/.mozilla/native-messaging-hosts`, and it cannot reach `pass`/`gpg` or `~/.password-store` the usual way. The installer handles both automatically.
+
+Just run the installer with `firefox` and it will **auto-detect** every installed Firefox flavour (regular, Snap and/or Flatpak) and install into each:
+
+```bash
+./install_host_app.sh --local firefox
+```
+
+You can also target a specific flavour explicitly with `firefox-snap` or `firefox-flatpak`.
+
+What the installer sets up per flavour:
+
+- **Flatpak** — the manifest points at a small wrapper that bridges to the host with `flatpak-spawn --host`. The installer also grants the one permission this needs:
+  ```bash
+  flatpak override --user --talk-name=org.freedesktop.Flatpak org.mozilla.firefox
+  ```
+- **Snap** — a Snap-confined Firefox cannot execute the host's `pass`/`gpg` at all (the snap runtime shadows `/usr` and AppArmor blocks running host binaries). Instead the installer sets up a **socket bridge**: a tiny forwarder runs inside the snap and pipes the Native Messaging stream over a Unix socket to a host-side daemon that runs `pass`/`gpg` with full access. The daemon is installed as a `systemd --user` service:
+  ```bash
+  systemctl --user status passff-host.service     # check it is running
+  systemctl --user restart passff-host.service    # after upgrading the host app
+  ```
+  The socket lives at `~/snap/firefox/common/passff-host.sock`, reachable both from the host and from inside the snap.
+
+After installing, restart Firefox so it re-reads the manifest.
+
 #### Windows
 Download the `install_host_app.bat` script from [our releases page](https://codeberg.org/PassFF/passff-host/releases) and execute it from within a shell with a correct PATH, mentioning your browser in the last argument (i.e., replace `firefox` by `librewolf`, `chrome`, `opera`, `chromium` or `vivaldi` if necessary).
 *The rule of thumb is: if you can execute pass and python from your shell, then your host application will be installed correctly.*
