@@ -87,10 +87,17 @@ def main():
         except OSError:
             pass
 
-    server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    server.bind(socket_path)
-    # Only the user may talk to the socket.
-    os.chmod(socket_path, 0o600)
+    # Restrict the socket to the owner. Set the umask BEFORE bind() so the
+    # socket node is never even briefly group-/world-accessible (chmod after
+    # bind would leave a race window through which another local user could
+    # connect and request secrets).
+    old_umask = os.umask(0o077)
+    try:
+        server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        server.bind(socket_path)
+    finally:
+        os.umask(old_umask)
+    os.chmod(socket_path, 0o600)  # belt and braces
     server.listen(8)
 
     try:
