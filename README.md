@@ -72,6 +72,27 @@ What the installer sets up per flavour:
 
 After installing, **fully restart Firefox** (so it picks up the `user.js` change and re-reads the manifest).
 
+#### Chromium / Chrome (incl. Snap & Flatpak)
+
+PassFF has no official Chromium extension, so this repo ships a small self-hosted
+one in [`chromium-extension/`](chromium-extension/) — see its README for loading
+instructions. Install the matching host with:
+
+```bash
+./install_host_app.sh chromium          # regular Chromium
+./install_host_app.sh chrome            # Google Chrome
+make install BROWSER=chromium-snap      # Snap Chromium (Ubuntu)
+./install_host_app.sh chromium-flatpak  # Flatpak Chromium
+```
+
+Chrome-family manifests authorise the extension by id (`allowed_origins`) rather
+than Firefox's `allowed_extensions`; the installer fills in the bundled
+extension's id by default (override with the `CHROME_EXTENSION_ID` env var).
+
+Snap Chromium needs the same socket bridge as Snap Firefox (a host-side
+`passff-host-chromium.service`), but **not** the portal workaround — Chromium
+launches Native Messaging hosts directly rather than through the XDG portal.
+
 #### Windows
 Download the `install_host_app.bat` script from [our releases page](https://codeberg.org/PassFF/passff-host/releases) and execute it from within a shell with a correct PATH, mentioning your browser in the last argument (i.e., replace `firefox` by `librewolf`, `chrome`, `opera`, `chromium` or `vivaldi` if necessary).
 *The rule of thumb is: if you can execute pass and python from your shell, then your host application will be installed correctly.*
