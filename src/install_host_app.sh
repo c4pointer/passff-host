@@ -197,6 +197,36 @@ install_snap_bridge() {
   chmod a+x "$_wrapper"
 
   install_snap_daemon_service "$_daemon" "$_socket"
+  configure_snap_portal_pref
+}
+
+# configure_snap_portal_pref
+#
+# Snap Firefox resolves Native Messaging hosts through the XDG Desktop Portal
+# (org.freedesktop.portal.WebExtensions). On many systems that portal cannot
+# locate the host and replies "NotFound", so the host is never launched. We
+# disable the portal for Native Messaging (pref value 0 = never) via user.js in
+# every Firefox profile, which makes Firefox fall back to launching the manifest
+# directly -> our wrapper -> the socket bridge.
+configure_snap_portal_pref() {
+  _ff_base="$HOME/snap/firefox/common/.mozilla/firefox"
+  [ -d "$_ff_base" ] || return 0
+  _pref='user_pref("widget.use-xdg-desktop-portal.native-messaging", 0);'
+  _done=0
+  for _prof in "$_ff_base"/*/; do
+    # Only touch real profile directories (those Firefox has initialised).
+    [ -f "$_prof/prefs.js" ] || [ -f "$_prof/times.json" ] || continue
+    _uj="$_prof/user.js"
+    if [ -f "$_uj" ] && grep -q 'widget.use-xdg-desktop-portal.native-messaging' "$_uj" 2>/dev/null; then
+      grep -v 'widget.use-xdg-desktop-portal.native-messaging' "$_uj" > "$_uj.tmp" && mv "$_uj.tmp" "$_uj"
+    fi
+    echo "$_pref" >> "$_uj"
+    _done=1
+  done
+  if [ "$_done" = 1 ]; then
+    echo "Disabled the (broken) Native Messaging portal in your Firefox profiles."
+    echo "Restart Firefox once for this to take effect."
+  fi
 }
 
 # install_host TARGET_DIR SANDBOX BROWSER_NAME

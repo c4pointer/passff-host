@@ -57,14 +57,20 @@ What the installer sets up per flavour:
   ```bash
   flatpak override --user --talk-name=org.freedesktop.Flatpak org.mozilla.firefox
   ```
-- **Snap** — a Snap-confined Firefox cannot execute the host's `pass`/`gpg` at all (the snap runtime shadows `/usr` and AppArmor blocks running host binaries). Instead the installer sets up a **socket bridge**: a tiny forwarder runs inside the snap and pipes the Native Messaging stream over a Unix socket to a host-side daemon that runs `pass`/`gpg` with full access. The daemon is installed as a `systemd --user` service:
-  ```bash
-  systemctl --user status passff-host.service     # check it is running
-  systemctl --user restart passff-host.service    # after upgrading the host app
-  ```
-  The socket lives at `~/snap/firefox/common/passff-host.sock`, reachable both from the host and from inside the snap.
+- **Snap** — two things have to happen:
+  1. **Disable the Native Messaging portal.** Snap Firefox tries to resolve Native Messaging hosts through the XDG Desktop Portal (`org.freedesktop.portal.WebExtensions`). On many systems that portal replies `NotFound: Could not find native messaging host` and the host is never launched. The installer therefore sets, in every Firefox profile's `user.js`:
+     ```
+     user_pref("widget.use-xdg-desktop-portal.native-messaging", 0);
+     ```
+     which makes Firefox fall back to launching the manifest directly.
+  2. **Bridge out of the sandbox.** A Snap-confined Firefox still cannot execute the host's `pass`/`gpg` (the snap runtime shadows `/usr` and AppArmor blocks running host binaries via hostfs). So the installer sets up a **socket bridge**: a tiny forwarder runs inside the snap and pipes the Native Messaging stream over a Unix socket to a host-side daemon that runs `pass`/`gpg` with full access. The daemon is installed as a `systemd --user` service:
+     ```bash
+     systemctl --user status passff-host.service     # check it is running
+     systemctl --user restart passff-host.service    # after upgrading the host app
+     ```
+     The socket lives at `~/snap/firefox/common/passff-host.sock`, reachable both from the host and from inside the snap.
 
-After installing, restart Firefox so it re-reads the manifest.
+After installing, **fully restart Firefox** (so it picks up the `user.js` change and re-reads the manifest).
 
 #### Windows
 Download the `install_host_app.bat` script from [our releases page](https://codeberg.org/PassFF/passff-host/releases) and execute it from within a shell with a correct PATH, mentioning your browser in the last argument (i.e., replace `firefox` by `librewolf`, `chrome`, `opera`, `chromium` or `vivaldi` if necessary).
