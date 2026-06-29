@@ -78,7 +78,12 @@ function parseTree(stdout) {
 // First line = password; following "key: value" lines = metadata fields.
 function parseEntry(stdout) {
   const lines = stdout.replace(/\n$/, "").split("\n");
-  const password = lines.shift() || "";
+  // An OTP-only entry (created by `pass otp insert`) has the otpauth:// URI as
+  // its first line — that is not a password, so don't treat it as one.
+  let password = "";
+  if (lines.length && !/^otpauth:\/\//i.test(lines[0])) {
+    password = lines.shift();
+  }
   const fields = {};
   for (const line of lines) {
     const idx = line.indexOf(":");
@@ -144,6 +149,8 @@ function showDetail(entry) {
   $("detail").classList.remove("hidden");
   $("detail-name").textContent = entry.path;
 
+  // Hide the password row entirely for OTP-only entries.
+  $("password-field").classList.toggle("hidden", !currentEntry.password);
   const pwEl = $("detail-password");
   pwEl.textContent = currentEntry.password;
   pwEl.classList.add("masked");
