@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "PassFF (self-hosted)",
+  "version": "1.0.0",
+  "description": "Access your zx2c4 pass password store from Chromium through the PassFF native messaging host.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAk0pDhfekkSigtrnaRLw1zn+4rCzPiv39FgW5xsjoKaB9XNNstNwEJpU1DQiUliJ6IzY3BKpANiK02acPPz+sRV6t/BEnsRwQx8gmuztn4VQNctc84Z3tuPLbDdf7YE0pgq1OV7Xmy1URt3YUWyWGtNF2xYhLMH6bwEUUrSZ6j9vsI4BxiEHT0mOBzzB9KIv73jg9iuA7SHtknjSNllgGniW9L0lJLPQcHf8oo01FiRruQGQGgpVtaQVhPP+0UczETSUv0asd2gWK2I5gVK5MJQQA+QUz6QgMy9q70NZIcxs1EIXfL2vuVQjmxd4wlriHR2wKcWzyheR+MF6c5l7GZwIDAQAB",
+  "permissions": [
+    "nativeMessaging",
+    "clipboardWrite",
+    "activeTab",
+    "scripting"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "PassFF"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

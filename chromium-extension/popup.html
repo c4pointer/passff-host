@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <input id="search" type="search" placeholder="Search passwords…" autocomplete="off" autofocus>
+  </header>
+
+  <div id="status" class="status hidden"></div>
+
+  <ul id="list" class="list"></ul>
+
+  <section id="detail" class="detail hidden">
+    <button id="back" class="back">‹ Back</button>
+    <h2 id="detail-name"></h2>
+    <div class="field">
+      <span class="label">Password</span>
+      <code id="detail-password" class="value masked"></code>
+      <button class="btn" id="toggle-pw" title="Show / hide">👁</button>
+      <button class="btn" id="copy-pw" title="Copy password">Copy</button>
+    </div>
+    <div class="field" id="username-field">
+      <span class="label">Login</span>
+      <code id="detail-username" class="value"></code>
+      <button class="btn" id="copy-user" title="Copy login">Copy</button>
+    </div>
+    <button class="btn fill" id="fill" title="Fill the current page's login form">Fill current page</button>
+    <details id="extra-wrap" class="hidden">
+      <summary>Other fields</summary>
+      <pre id="detail-extra"></pre>
+    </details>
+  </section>
+
+  <footer id="footer"></footer>
+
+  <script src="popup.js"></script>
+</body>
+</html>

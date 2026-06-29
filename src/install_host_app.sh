@@ -12,6 +12,13 @@ HOST_URL="$DOWNLOAD_BASE/passff.py"
 MANIFEST_URL="$DOWNLOAD_BASE/passff.json"
 KERNEL_NAME=$(uname -s)
 
+# Chrome-family manifests use "allowed_origins" with the extension's id rather
+# than Firefox's "allowed_extensions". This is the id of the self-hosted PassFF
+# Chromium extension shipped in chromium-extension/ (stable thanks to its pinned
+# manifest "key"). Override with the CHROME_EXTENSION_ID env var for a different
+# extension.
+CHROME_EXTENSION_ID="${CHROME_EXTENSION_ID:-kmnojihalnnnimckkdclnfmjpbndnljk}"
+
 # Find target dirs for various browsers & OS'es
 # https://developer.chrome.com/extensions/nativeMessaging#native-messaging-host-location
 # https://wiki.mozilla.org/WebExtensions/Native_Messaging
@@ -42,24 +49,29 @@ else
     TARGET_DIR_FIREFOX="$HOME/.mozilla/native-messaging-hosts"
     TARGET_DIR_VIVALDI="$HOME/.config/vivaldi/NativeMessagingHosts"
     TARGET_DIR_LIBREWOLF="$HOME/.librewolf/native-messaging-hosts"
-    # Sandboxed (containerised) Firefox packages keep their Native Messaging
-    # manifests inside the package's private home, not in ~/.mozilla.
+    # Sandboxed (containerised) packages keep their Native Messaging manifests
+    # inside the package's private home, not in the usual per-user location.
     TARGET_DIR_FIREFOX_SNAP="$HOME/snap/firefox/common/.mozilla/native-messaging-hosts"
     TARGET_DIR_FIREFOX_FLATPAK="$HOME/.var/app/org.mozilla.firefox/.mozilla/native-messaging-hosts"
+    TARGET_DIR_CHROMIUM_SNAP="$HOME/snap/chromium/common/chromium/NativeMessagingHosts"
+    TARGET_DIR_CHROMIUM_FLATPAK="$HOME/.var/app/org.chromium.Chromium/config/chromium/NativeMessagingHosts"
   fi
 fi
 
 usage() {
-  echo "Usage: $0 [OPTION] [chrome|chromium|firefox|firefox-snap|firefox-flatpak|opera|vivaldi|librewolf]
+  echo "Usage: $0 [OPTION] [chrome|chromium|chromium-snap|chromium-flatpak|firefox|firefox-snap|firefox-flatpak|opera|vivaldi|librewolf]
 
   Examples:
     $0 firefox          # Install host app for a regular Mozilla Firefox
     $0 firefox-snap     # Install host app for Snap Firefox (Ubuntu)
-    $0 firefox-flatpak  # Install host app for Flatpak Firefox
+    $0 chromium-snap    # Install host app for Snap Chromium (Ubuntu)
 
   Options:
     -l, --local    Install files from disk instead of downloading them
-    -h, --help     Show this message"
+    -h, --help     Show this message
+
+  For Chrome-family browsers the manifest is restricted to the extension id in
+  CHROME_EXTENSION_ID (defaults to the self-hosted PassFF Chromium extension)."
 }
 
 # generate_wrapper SANDBOX WRAPPER_PATH PYTHON3_PATH HOST_PATH
@@ -129,20 +141,21 @@ copy_source() {
   fi
 }
 
-# install_snap_daemon_service DAEMON_PATH SOCKET_PATH
+# install_snap_daemon_service DAEMON_PATH SOCKET_PATH SERVICE_NAME
 #
 # Writes and (best-effort) starts a systemd --user service that keeps the host
 # bridge daemon running outside the snap confinement.
 install_snap_daemon_service() {
   _daemon="$1"
   _socket="$2"
+  _service="$3"
   _unit_dir="$HOME/.config/systemd/user"
-  _unit="$_unit_dir/passff-host.service"
+  _unit="$_unit_dir/$_service.service"
 
   mkdir -p "$_unit_dir"
   cat > "$_unit" <<EOF
 [Unit]
-Description=PassFF Native Messaging host bridge for Snap Firefox
+Description=PassFF Native Messaging host bridge ($_service)
 
 [Service]
 Type=simple
@@ -157,11 +170,11 @@ EOF
     systemctl --user daemon-reload 2>/dev/null || true
     # Expose the graphical session env so gpg's pinentry can pop up if needed.
     systemctl --user import-environment DISPLAY WAYLAND_DISPLAY XAUTHORITY 2>/dev/null || true
-    if systemctl --user enable --now passff-host.service 2>/dev/null; then
-      echo "Started passff-host.service (the host-side bridge daemon)."
+    if systemctl --user enable --now "$_service.service" 2>/dev/null; then
+      echo "Started $_service.service (the host-side bridge daemon)."
     else
-      echo "WARNING: could not start passff-host.service automatically. Run:"
-      echo "           systemctl --user enable --now passff-host.service"
+      echo "WARNING: could not start $_service.service automatically. Run:"
+      echo "           systemctl --user enable --now $_service.service"
     fi
   else
     echo "NOTE: systemd --user not available. Start the daemon manually:"
@@ -169,20 +182,21 @@ EOF
   fi
 }
 
-# install_snap_bridge TARGET_DIR HOST_PY_PATH WRAPPER_PATH
+# install_snap_bridge TARGET_DIR HOST_PY_PATH SOCKET_PATH SERVICE_NAME
 #
 # Sets up the full Snap bridge: a forwarder (runs inside the snap), a host
 # daemon (runs outside, talks to pass/gpg), the wrapper the browser launches,
-# and the systemd user service that keeps the daemon alive.
+# and the systemd user service that keeps the daemon alive. SOCKET_PATH lives in
+# the snap's own writable area (reachable both from the host and from inside the
+# snap); SERVICE_NAME isolates the firefox and chromium daemons.
 install_snap_bridge() {
   _td="$1"
   _hostpy="$2"
-  _wrapper="$3"
+  _socket="$3"
+  _service="$4"
+  _wrapper="$_td/$APP_NAME-wrapper.sh"
   _forward="$_td/$APP_NAME-snap-forward.py"
   _daemon="$_td/$APP_NAME-host-daemon.py"
-  # The socket lives in the snap's own writable area, which is reachable both
-  # from the host (directly) and from inside the snap (as $HOME/...).
-  _socket="$HOME/snap/firefox/common/$APP_NAME-host.sock"
 
   # Forwarder runs inside the snap with the snap runtime's python3, so leave
   # its shebang/interpreter alone (the host python is not reachable there).
@@ -196,8 +210,7 @@ install_snap_bridge() {
   generate_wrapper snap "$_wrapper" "$PYTHON3_PATH" "$_hostpy" "$_forward" "$_socket"
   chmod a+x "$_wrapper"
 
-  install_snap_daemon_service "$_daemon" "$_socket"
-  configure_snap_portal_pref
+  install_snap_daemon_service "$_daemon" "$_socket" "$_service"
 }
 
 # configure_snap_portal_pref
@@ -233,15 +246,19 @@ configure_snap_portal_pref() {
   fi
 }
 
-# install_host TARGET_DIR SANDBOX BROWSER_NAME
+# install_host TARGET_DIR SANDBOX BROWSER_NAME FAMILY SNAP_APP FLATPAK_APP
 #
 # Installs the Python host + manifest (+ wrapper for sandboxed browsers) into a
-# single target directory. Relies on the globals PYTHON3_PATH, PASS_PATH,
-# HOST_SED and USE_LOCAL_FILES being set up beforehand.
+# single target directory. FAMILY is "gecko" or "chromium" and selects the
+# manifest format. SNAP_APP / FLATPAK_APP name the sandboxed package. Relies on
+# the globals PYTHON3_PATH, PASS_PATH, HOST_SED and USE_LOCAL_FILES.
 install_host() {
   _target_dir="$1"
   _sandbox="$2"
   _browser_name="$3"
+  _family="${4:-gecko}"
+  _snap_app="$5"
+  _flatpak_app="$6"
 
   _host_file="$_target_dir/$APP_NAME.py"
   _manifest_file="$_target_dir/$APP_NAME.json"
@@ -264,6 +281,11 @@ install_host() {
   _manifest_target_esc="$(echo "$_manifest_target" | sed -e 's/@/\\@/g')"
   # Replace path to host (wrapper for sandboxed browsers, Python host otherwise)
   _manifest_sed="s@PLACEHOLDER@$_manifest_target_esc@;"
+  # Chrome-family browsers gate on "allowed_origins" (chrome-extension://<id>/)
+  # instead of Firefox's "allowed_extensions".
+  if [ "$_family" = "chromium" ]; then
+    _manifest_sed="$_manifest_sed s@\"allowed_extensions\":.*@\"allowed_origins\": [ \"chrome-extension://$CHROME_EXTENSION_ID/\" ]@;"
+  fi
 
   if [ "$USE_LOCAL_FILES" = true ]; then
     sed -e "${HOST_SED}"      "$(dirname "$0")/passff.py"   >  "$_host_file"
@@ -283,19 +305,29 @@ install_host() {
     # Flatpak: a thin wrapper that jumps to the host with flatpak-spawn.
     generate_wrapper flatpak "$_wrapper_file" "$PYTHON3_PATH" "$_host_file"
     chmod a+x "$_wrapper_file"
-    # By default the Flatpak Firefox is NOT allowed to talk to the Flatpak
-    # session helper, so flatpak-spawn --host would fail. Grant just that.
+    # By default a Flatpak app is NOT allowed to talk to the Flatpak session
+    # helper, so flatpak-spawn --host would fail. Grant just that.
     if command -v flatpak >/dev/null 2>&1 && \
-       flatpak override --user --talk-name=org.freedesktop.Flatpak org.mozilla.firefox 2>/dev/null; then
-      echo "Granted org.mozilla.firefox permission to use flatpak-spawn --host."
+       flatpak override --user --talk-name=org.freedesktop.Flatpak "$_flatpak_app" 2>/dev/null; then
+      echo "Granted $_flatpak_app permission to use flatpak-spawn --host."
     else
       echo "WARNING: could not grant the flatpak-spawn permission automatically."
       echo "         Please run this once yourself:"
-      echo "           flatpak override --user --talk-name=org.freedesktop.Flatpak org.mozilla.firefox"
+      echo "           flatpak override --user --talk-name=org.freedesktop.Flatpak $_flatpak_app"
     fi
   elif [ "$_sandbox" = "snap" ]; then
     # Snap: a socket bridge to a host-side daemon (the snap cannot run pass/gpg).
-    install_snap_bridge "$_target_dir" "$_host_file" "$_wrapper_file"
+    # firefox and chromium get their own socket + daemon service.
+    if [ "$_snap_app" = "chromium" ]; then
+      install_snap_bridge "$_target_dir" "$_host_file" \
+        "$HOME/snap/chromium/common/$APP_NAME-host.sock" "passff-host-chromium"
+    else
+      install_snap_bridge "$_target_dir" "$_host_file" \
+        "$HOME/snap/firefox/common/$APP_NAME-host.sock" "passff-host"
+      # Firefox routes Native Messaging through the (often broken) XDG portal;
+      # Chromium does not, so only disable it for Firefox.
+      configure_snap_portal_pref
+    fi
   fi
 
   echo "Native messaging host for $_browser_name has been installed to $_target_dir."
@@ -342,10 +374,26 @@ while [ $# -gt 0 ]; do
     chrome)
       BROWSER_NAME="Chrome"
       TARGET_DIR="$TARGET_DIR_CHROME"
+      FAMILY="chromium"
       ;;
     chromium)
       BROWSER_NAME="Chromium"
       TARGET_DIR="$TARGET_DIR_CHROMIUM"
+      FAMILY="chromium"
+      ;;
+    chromium-snap)
+      BROWSER_NAME="Chromium (Snap)"
+      TARGET_DIR="$TARGET_DIR_CHROMIUM_SNAP"
+      FAMILY="chromium"
+      SANDBOX="snap"
+      SNAP_APP="chromium"
+      ;;
+    chromium-flatpak)
+      BROWSER_NAME="Chromium (Flatpak)"
+      TARGET_DIR="$TARGET_DIR_CHROMIUM_FLATPAK"
+      FAMILY="chromium"
+      SANDBOX="flatpak"
+      FLATPAK_APP="org.chromium.Chromium"
       ;;
     firefox)
       # Auto-detect which Firefox flavour(s) are installed and install into
@@ -355,24 +403,31 @@ while [ $# -gt 0 ]; do
     firefox-snap)
       BROWSER_NAME="Firefox (Snap)"
       TARGET_DIR="$TARGET_DIR_FIREFOX_SNAP"
+      FAMILY="gecko"
       SANDBOX="snap"
+      SNAP_APP="firefox"
       ;;
     firefox-flatpak)
       BROWSER_NAME="Firefox (Flatpak)"
       TARGET_DIR="$TARGET_DIR_FIREFOX_FLATPAK"
+      FAMILY="gecko"
       SANDBOX="flatpak"
+      FLATPAK_APP="org.mozilla.firefox"
       ;;
     librewolf)
       BROWSER_NAME="Librewolf"
       TARGET_DIR="$TARGET_DIR_LIBREWOLF"
+      FAMILY="gecko"
       ;;
     opera)
       BROWSER_NAME="Opera"
       TARGET_DIR="$TARGET_DIR_VIVALDI"
+      FAMILY="chromium"
       ;;
     vivaldi)
       BROWSER_NAME="Vivaldi"
       TARGET_DIR="$TARGET_DIR_VIVALDI"
+      FAMILY="chromium"
       ;;
     -l|--local)
       USE_LOCAL_FILES=true
@@ -434,11 +489,11 @@ if [ "$FIREFOX_AUTO" = true ]; then
   fi
   for variant in $VARIANTS; do
     case "$variant" in
-      regular) install_host "$TARGET_DIR_FIREFOX"         ""        "Firefox" ;;
-      snap)    install_host "$TARGET_DIR_FIREFOX_SNAP"    "snap"    "Firefox (Snap)" ;;
-      flatpak) install_host "$TARGET_DIR_FIREFOX_FLATPAK" "flatpak" "Firefox (Flatpak)" ;;
+      regular) install_host "$TARGET_DIR_FIREFOX"         ""        "Firefox"            gecko ;;
+      snap)    install_host "$TARGET_DIR_FIREFOX_SNAP"    "snap"    "Firefox (Snap)"     gecko firefox ;;
+      flatpak) install_host "$TARGET_DIR_FIREFOX_FLATPAK" "flatpak" "Firefox (Flatpak)"  gecko "" org.mozilla.firefox ;;
     esac
   done
 else
-  install_host "$TARGET_DIR" "$SANDBOX" "$BROWSER_NAME"
+  install_host "$TARGET_DIR" "$SANDBOX" "$BROWSER_NAME" "$FAMILY" "$SNAP_APP" "$FLATPAK_APP"
 fi
