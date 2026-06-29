@@ -9,14 +9,31 @@ let currentEntry = null; // {password, username, fields, raw}
 
 // ---- Native messaging -------------------------------------------------------
 
+// NOTE: we use connectNative + postMessage rather than sendNativeMessage.
+// Chrome's sendNativeMessage types `message` as `object` and rejects a
+// top-level JSON array ("No matching signature"), but the PassFF host protocol
+// sends arrays (e.g. [] or ["path"]). A native messaging Port's postMessage
+// accepts any JSON value, so arrays go through.
 function passffCall(args) {
   return new Promise((resolve, reject) => {
-    chrome.runtime.sendNativeMessage(HOST_NAME, args, (resp) => {
-      const err = chrome.runtime.lastError;
-      if (err) return reject(new Error(err.message));
-      if (!resp) return reject(new Error("No response from the host app."));
+    let port;
+    try {
+      port = chrome.runtime.connectNative(HOST_NAME);
+    } catch (e) {
+      return reject(e);
+    }
+    let settled = false;
+    port.onMessage.addListener((resp) => {
+      settled = true;
+      port.disconnect();
       resolve(resp);
     });
+    port.onDisconnect.addListener(() => {
+      if (settled) return;
+      const err = chrome.runtime.lastError;
+      reject(new Error(err ? err.message : "The host app disconnected without replying."));
+    });
+    port.postMessage(args);
   });
 }
 
