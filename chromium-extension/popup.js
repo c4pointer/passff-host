@@ -6,6 +6,9 @@ const USERNAME_KEYS = ["login", "username", "user", "email", "userid", "user nam
 const $ = (id) => document.getElementById(id);
 let allEntries = [];     // [{path, name}]
 let currentEntry = null; // {password, username, fields, raw}
+let currentPath = null;  // path of the open entry
+let otpTimer = null;     // interval id for the OTP countdown
+let otpCode = "";        // last fetched one-time code
 
 // ---- Native messaging -------------------------------------------------------
 
@@ -135,6 +138,8 @@ async function openEntry(entry) {
 }
 
 function showDetail(entry) {
+  currentPath = entry.path;
+  clearOtp();
   $("list").classList.add("hidden");
   $("detail").classList.remove("hidden");
   $("detail-name").textContent = entry.path;
@@ -160,12 +165,65 @@ function showDetail(entry) {
   } else {
     extraWrap.classList.add("hidden");
   }
+
+  // OTP: the entry carries a TOTP secret if it has an otpauth:// URI.
+  const hasOtp = /otpauth:\/\//.test(currentEntry.raw);
+  $("otp-field").classList.toggle("hidden", !hasOtp);
+  $("fill-otp").classList.toggle("hidden", !hasOtp);
+  if (hasOtp) startOtp(entry.path);
 }
 
 function showList() {
+  clearOtp();
   $("detail").classList.add("hidden");
   $("list").classList.remove("hidden");
   currentEntry = null;
+  currentPath = null;
+}
+
+// ---- OTP --------------------------------------------------------------------
+
+function clearOtp() {
+  if (otpTimer) { clearInterval(otpTimer); otpTimer = null; }
+  otpCode = "";
+}
+
+// Standard TOTP step is 30s; show the time left in the current window and
+// refetch a fresh code when it rolls over.
+function otpSecondsLeft() {
+  return 30 - (Math.floor(Date.now() / 1000) % 30);
+}
+
+async function fetchOtp(path) {
+  try {
+    const resp = await passffCall(["otp", path]);
+    if (resp.exitCode !== 0) {
+      otpCode = "";
+      $("detail-otp").textContent = "—";
+      $("otp-ttl").textContent = "";
+      setStatus((resp.stderr || "pass otp failed (is pass-otp installed?)").trim(), true);
+      clearOtp();
+      return;
+    }
+    otpCode = resp.stdout.trim().split("\n").pop().trim();
+    $("detail-otp").textContent = otpCode;
+  } catch (e) {
+    setStatus(e.message, true);
+    clearOtp();
+  }
+}
+
+function startOtp(path) {
+  $("detail-otp").textContent = "…";
+  $("otp-ttl").textContent = "";
+  fetchOtp(path);
+  let lastLeft = otpSecondsLeft();
+  otpTimer = setInterval(() => {
+    const left = otpSecondsLeft();
+    $("otp-ttl").textContent = left + "s";
+    if (left > lastLeft) fetchOtp(path); // window rolled over -> new code
+    lastLeft = left;
+  }, 1000);
 }
 
 async function copy(text, label) {
@@ -223,6 +281,45 @@ async function doFill() {
   }
 }
 
+// Injected: fill a one-time-code / 2FA field with the given code.
+function fillOtpField(code) {
+  const set = (el, val) => {
+    el.focus();
+    el.value = val;
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+  const sel =
+    'input[autocomplete="one-time-code"], input[name*="otp" i], input[id*="otp" i], ' +
+    'input[name*="totp" i], input[name*="2fa" i], input[name*="token" i], ' +
+    'input[aria-label*="code" i], input[inputmode="numeric"]';
+  const el = document.querySelector(sel);
+  if (!el) return "no-otp-field";
+  set(el, code);
+  return "ok";
+}
+
+async function doFillOtp() {
+  if (!otpCode) { setStatus("No OTP code yet.", true); return; }
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab) throw new Error("No active tab.");
+    const [res] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: fillOtpField,
+      args: [otpCode],
+    });
+    if (res && res.result === "no-otp-field") {
+      setStatus("No one-time-code field found on the page.", true);
+    } else {
+      setStatus("OTP filled.");
+      setTimeout(() => window.close(), 700);
+    }
+  } catch (e) {
+    setStatus("Fill OTP failed: " + e.message, true);
+  }
+}
+
 // ---- Wiring -----------------------------------------------------------------
 
 async function init() {
@@ -255,6 +352,8 @@ $("search").addEventListener("keydown", (e) => {
 $("back").addEventListener("click", showList);
 $("copy-pw").addEventListener("click", () => copy(currentEntry.password, "Password"));
 $("copy-user").addEventListener("click", () => copy(currentEntry.username, "Login"));
+$("copy-otp").addEventListener("click", () => otpCode && copy(otpCode, "OTP code"));
+$("fill-otp").addEventListener("click", doFillOtp);
 $("toggle-pw").addEventListener("click", () => {
   const el = $("detail-password");
   const shown = el.dataset.shown === "1";

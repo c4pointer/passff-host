@@ -54,6 +54,11 @@ header { padding: 8px; border-bottom: 1px solid #e5e5e5; position: sticky; top: 
 .btn:hover { background: #f0f0f0; }
 .btn.fill { width: 100%; margin-top: 4px; background: #4f8cff; color: #fff; border-color: #4f8cff; }
 .btn.fill:hover { background: #3b78f0; }
+.btn.fill.ghost { background: transparent; color: #4f8cff; }
+.btn.fill.ghost:hover { background: #eef3ff; }
+
+.value.otp { letter-spacing: 3px; font-size: 15px; }
+.ttl { flex: none; width: 34px; text-align: center; color: #888; font-variant-numeric: tabular-nums; }
 
 details { margin-top: 12px; }
 details pre { background: #f4f4f5; padding: 8px; border-radius: 5px; overflow-x: auto; white-space: pre-wrap; }

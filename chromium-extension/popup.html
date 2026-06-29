@@ -27,7 +27,14 @@
       <code id="detail-username" class="value"></code>
       <button class="btn" id="copy-user" title="Copy login">Copy</button>
     </div>
+    <div class="field" id="otp-field">
+      <span class="label">OTP</span>
+      <code id="detail-otp" class="value otp"></code>
+      <span id="otp-ttl" class="ttl" title="Seconds until this code rotates"></span>
+      <button class="btn" id="copy-otp" title="Copy one-time code">Copy</button>
+    </div>
     <button class="btn fill" id="fill" title="Fill the current page's login form">Fill current page</button>
+    <button class="btn fill ghost" id="fill-otp" title="Fill the one-time-code field on the current page">Fill OTP</button>
     <details id="extra-wrap" class="hidden">
       <summary>Other fields</summary>
       <pre id="detail-extra"></pre>
