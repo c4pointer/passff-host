@@ -217,8 +217,12 @@ configure_snap_portal_pref() {
     # Only touch real profile directories (those Firefox has initialised).
     [ -f "$_prof/prefs.js" ] || [ -f "$_prof/times.json" ] || continue
     _uj="$_prof/user.js"
-    if [ -f "$_uj" ] && grep -q 'widget.use-xdg-desktop-portal.native-messaging' "$_uj" 2>/dev/null; then
-      grep -v 'widget.use-xdg-desktop-portal.native-messaging' "$_uj" > "$_uj.tmp" && mv "$_uj.tmp" "$_uj"
+    # Drop any previous setting of this pref, then add ours. Use an
+    # unconditional mv: if the filtered output is empty (the file held only
+    # this pref) grep exits non-zero, so we must not gate mv on its status.
+    if [ -f "$_uj" ]; then
+      grep -v 'widget.use-xdg-desktop-portal.native-messaging' "$_uj" > "$_uj.tmp" 2>/dev/null || true
+      mv "$_uj.tmp" "$_uj"
     fi
     echo "$_pref" >> "$_uj"
     _done=1
